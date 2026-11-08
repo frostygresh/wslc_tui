@@ -1,0 +1,5 @@
+# wslc TUI dependencies (Python 3.10+). Install with:
+#   pip install -r wslc\requirements.txt
+# The wslc TUI is licensed under GPL-3.0-or-later; textual and rich are MIT-licensed.
+textual>=8.2.8,<9
+rich>=15.0.0

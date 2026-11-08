@@ -94,7 +94,14 @@ class WslcError(Exception):
 
 
 def format_command(args: list[str] | tuple[str, ...]) -> str:
-    """Render a wslc command line for display, masking environment variable values."""
+    """Render a wslc command line for display, masking environment variable values.
+
+    Args:
+        args: Arguments passed to the wslc command, excluding the executable.
+
+    Returns:
+        A displayable command line with environment values masked.
+    """
     shown, mask_next = [], False
     for arg in args:
         if mask_next and "=" in arg:
@@ -127,6 +134,11 @@ class CommandTracer:
     SLOW_SECONDS = 1.0
 
     def __init__(self) -> None:
+        """Initialize the command tracer and its synchronized state.
+
+        Returns:
+            None.
+        """
         self.entries: queue.Queue[CommandEntry] = queue.Queue()
         self.ids = itertools.count(1)
         self.lock = threading.Lock()
@@ -139,7 +151,14 @@ class CommandTracer:
 
     @contextmanager
     def label(self, name: str) -> Generator[None, None, None]:
-        """Tag commands run by this thread inside the block (e.g. auto refresh)."""
+        """Tag commands run by this thread inside the block (e.g. auto refresh).
+
+        Args:
+            name: Label applied to commands on the current thread within the context.
+
+        Yields:
+            None while the thread-local label is active; the previous label is restored on exit.
+        """
         previous = getattr(self.local, "label", None)
         self.local.label = name
         try:
@@ -148,17 +167,43 @@ class CommandTracer:
             self.local.label = previous
 
     def write_file(self, text: str) -> None:
+        """Append and flush a line to the debug log when one is open.
+
+        Args:
+            text: Line to append to the debug log.
+
+        Returns:
+            None.
+        """
         if self.log_file:
             with self.lock:
                 self.log_file.write(text + "\n")
                 self.log_file.flush()
 
     def emit(self, text: str, style: str = "", refresh: bool = False) -> None:
+        """Queue a timestamped debug entry and write it to the debug log.
+
+        Args:
+            text: Debug message to timestamp and queue.
+            style: Rich style applied to the debug entry.
+            refresh: Whether the entry belongs to an automatic refresh.
+
+        Returns:
+            None.
+        """
         line = f"{datetime.now():%H:%M:%S.%f}"[:-3] + "  " + text
         self.entries.put(CommandEntry(line, style, refresh))
         self.write_file(line)
 
     def start(self, args: list[str] | tuple[str, ...]) -> int:
+        """Start tracing a command and record its arguments and start time.
+
+        Args:
+            args: Arguments passed to the wslc command, excluding the executable.
+
+        Returns:
+            The identifier assigned to the command.
+        """
         number = next(self.ids)
         refresh = getattr(self.local, "label", None) == "refresh"
         with self.lock:
@@ -167,6 +212,17 @@ class CommandTracer:
         return number
 
     def finish(self, number: int, code: int | None, error: str = "", note: str = "") -> None:
+        """Finish tracing a command and emit its result.
+
+        Args:
+            number: Identifier returned when tracing the command started.
+            code: Command exit code, or None if no exit code is available.
+            error: Command error output used for a failed result.
+            note: Optional status note for a command stopped intentionally.
+
+        Returns:
+            None.
+        """
         with self.lock:
             command, started, refresh = self.pending.pop(number, ("wslc ?", time.monotonic(), False))
             self.announced.discard(number)
@@ -185,7 +241,11 @@ class CommandTracer:
         self.emit(f"#{number} {status} · {duration}  {command}{tag}{detail}", style, refresh)
 
     def announce_slow(self) -> None:
-        """Emit a "running" line, once, for commands that have been going for a while."""
+        """Emit a "running" line, once, for commands that have been going for a while.
+
+        Returns:
+            None.
+        """
         now = time.monotonic()
         with self.lock:
             slow = [
@@ -240,7 +300,14 @@ def run_wslc(*args: str, timeout: float | None = 120) -> str:
 
 
 def parse_json_lines(output: str) -> list[dict]:
-    """Parse wslc ``--format json`` output, which emits one object per line."""
+    """Parse wslc ``--format json`` output, which emits one object per line.
+
+    Args:
+        output: JSON array or newline-delimited JSON output from wslc.
+
+    Returns:
+        The decoded list of JSON objects.
+    """
     output = output.strip()
     if output.startswith("["):
         return json.loads(output)
@@ -248,7 +315,14 @@ def parse_json_lines(output: str) -> list[dict]:
 
 
 def list_containers(show_all: bool) -> list[dict]:
-    """Return containers, either all of them or only running ones."""
+    """Return containers, either all of them or only running ones.
+
+    Args:
+        show_all: Whether to include stopped containers.
+
+    Returns:
+        Container records, filtered according to show_all.
+    """
     args = ["list", "--format", "json"]
     if show_all:
         args.append("--all")
@@ -256,18 +330,33 @@ def list_containers(show_all: bool) -> list[dict]:
 
 
 def list_images() -> list[dict]:
-    """Return locally available images."""
+    """Return locally available images.
+
+    Returns:
+        Locally available image records.
+    """
     return parse_json_lines(run_wslc("images", "--format", "json"))
 
 
 def list_volume_details() -> list[dict]:
-    """Return existing volumes as ``wslc volume list`` objects, sorted by name."""
+    """Return existing volumes as ``wslc volume list`` objects, sorted by name.
+
+    Returns:
+        Named volume records sorted by name.
+    """
     volumes = parse_json_lines(run_wslc("volume", "list", "--format", "json"))
     return sorted((v for v in volumes if v.get("Name")), key=lambda v: v["Name"])
 
 
 def volume_created_times(names: list[str]) -> dict[str, str]:
-    """Return each volume's local creation time, using one ``wslc volume inspect`` call."""
+    """Return each volume's local creation time, using one ``wslc volume inspect`` call.
+
+    Args:
+        names: Names of the volumes to inspect.
+
+    Returns:
+        A mapping from volume names to local creation times or original unparseable timestamps.
+    """
     if not names:
         return {}
     data = json.loads(run_wslc("volume", "inspect", *names))
@@ -288,6 +377,13 @@ def volume_users(containers: list[dict], volume_names: list[str]) -> dict[str, l
 
     The container list shortens long mount names to ``prefix…``, so those
     match every volume starting with the prefix.
+
+    Args:
+        containers: Container records returned by wslc.
+        volume_names: Volume names to match against container mounts.
+
+    Returns:
+        A mapping from each requested volume name to the names of containers using it.
     """
     users: dict[str, list[str]] = {name: [] for name in volume_names}
     for container in containers:
@@ -305,8 +401,11 @@ def volume_users(containers: list[dict], volume_names: list[str]) -> dict[str, l
 def normalize_port(spec: str) -> str:
     """Validate a ``[ip:]host:container[/tcp|udp]`` port mapping.
 
+    Args:
+        spec: Port mapping in [ip:]host:container[/tcp|udp] form.
+
     Returns:
-        The mapping with whitespace removed and the protocol lower-cased.
+        The mapping with surrounding whitespace removed and the protocol lower-cased.
 
     Raises:
         ValueError: If the mapping is malformed or a port is out of range.
@@ -349,7 +448,15 @@ RESERVED_SHORT = {"d": "--detach", "?": "--help"}
 
 
 def split_options(text: str, field_name: str = "Extra options") -> list[str]:
-    """Split a command line like a shell, but keep backslashes for Windows paths."""
+    """Split a command line like a shell, but keep backslashes for Windows paths.
+
+    Args:
+        text: Command-line text to split while preserving backslashes.
+        field_name: Field name included in a tokenization error.
+
+    Returns:
+        The tokenized command-line arguments.
+    """
     lexer = shlex.shlex(text, posix=True)
     lexer.whitespace_split = True
     lexer.escape = ""
@@ -367,6 +474,12 @@ def parse_extra_options(text: str) -> list[str]:
     option would end up being taken as the image name, so it's rejected.
     ``--opt=value`` is split into ``--opt value``.
 
+    Args:
+        text: Extra wslc run or create options entered in the form.
+
+    Returns:
+        Validated arguments, with long option values split into separate tokens.
+
     Raises:
         ValueError: With a message suitable for showing in the form.
     """
@@ -375,6 +488,14 @@ def parse_extra_options(text: str) -> list[str]:
     i = 0
 
     def take_value(option: str) -> None:
+        """Consume the next token as the value for an option.
+
+        Args:
+            option: Option whose next token is consumed.
+
+        Returns:
+            None.
+        """
         nonlocal i
         if i >= len(tokens):
             raise ValueError(f"{option} needs a value.")
@@ -422,12 +543,26 @@ def parse_extra_options(text: str) -> list[str]:
 
 
 def is_host_path(source: str) -> bool:
-    """Return True when a volume source is a Windows folder rather than a volume name."""
+    """Return True when a volume source is a Windows folder rather than a volume name.
+
+    Args:
+        source: Volume name or host path to classify.
+
+    Returns:
+        True if the source resembles a Windows or other host path; otherwise False.
+    """
     return bool(ntpath.splitdrive(source)[0]) or "\\" in source or "/" in source
 
 
 def option_pairs(options: list[str]) -> Iterator[tuple[str, str | None]]:
-    """Yield (option, value) pairs from arguments made by ``parse_extra_options``."""
+    """Yield (option, value) pairs from arguments made by ``parse_extra_options``.
+
+    Args:
+        options: Parsed command-line options and their values.
+
+    Yields:
+        Pairs of option names and values, with None for flags.
+    """
     i = 0
     while i < len(options):
         if options[i] in VALUE_OPTIONS and i + 1 < len(options):
@@ -439,7 +574,14 @@ def option_pairs(options: list[str]) -> Iterator[tuple[str, str | None]]:
 
 
 def join_options(options: list[str]) -> str:
-    """Turn arguments back into text for the Extra options field."""
+    """Turn arguments back into text for the Extra options field.
+
+    Args:
+        options: Parsed command-line options and their values.
+
+    Returns:
+        Command-line text representing the provided arguments.
+    """
     parts = []
     for arg in options:
         if arg and not re.search(r"[\s'\"]", arg):
@@ -456,6 +598,12 @@ def options_for_label(options: list[str]) -> str:
 
     Values stay in the container's environment; ``options_from_label`` puts
     them back. That keeps secrets out of the label and the debug panel.
+
+    Args:
+        options: Parsed command-line options and their values.
+
+    Returns:
+        A JSON string of options with environment values omitted.
     """
     stored = []
     for option, value in option_pairs(options):
@@ -466,7 +614,15 @@ def options_for_label(options: list[str]) -> str:
 
 
 def options_from_label(labels: dict, env: list[str]) -> list[str]:
-    """Recover the extra options a container was created with by this app."""
+    """Recover the extra options a container was created with by this app.
+
+    Args:
+        labels: Container labels containing any saved extra options.
+        env: Container environment entries used to restore environment values.
+
+    Returns:
+        The saved options with available environment values restored, or an empty list.
+    """
     try:
         stored = json.loads((labels or {}).get(OPTIONS_LABEL) or "[]")
     except json.JSONDecodeError:
@@ -485,7 +641,14 @@ def options_from_label(labels: dict, env: list[str]) -> list[str]:
 
 
 def port_key(port: str) -> str:
-    """Normalize a --publish value so equivalent mappings compare equal."""
+    """Normalize a --publish value so equivalent mappings compare equal.
+
+    Args:
+        port: Published port mapping to process.
+
+    Returns:
+        A normalized port mapping for comparisons.
+    """
     port = port.strip().lower().removesuffix("/tcp")
     for default_ip in ("127.0.0.1:", "0.0.0.0:"):
         port = port.removeprefix(default_ip)
@@ -493,7 +656,15 @@ def port_key(port: str) -> str:
 
 
 def mount_target(option: str, value: str) -> str | None:
-    """Return the container path of a --volume or --mount value."""
+    """Return the container path of a --volume or --mount value.
+
+    Args:
+        option: The --volume or --mount option name.
+        value: The option value containing a container target.
+
+    Returns:
+        The container mount path, or None if it cannot be extracted.
+    """
     if option == "--volume":
         match = re.search(r":(/[^:]*)(?::(?:ro|rw))?$", value)
         return match[1] if match else None
@@ -502,11 +673,26 @@ def mount_target(option: str, value: str) -> str | None:
 
 
 def published_ports(options: list[str]) -> list[str]:
+    """Extract publish values from parsed extra options.
+
+    Args:
+        options: Parsed command-line options and their values.
+
+    Returns:
+        Nonempty values of --publish options.
+    """
     return [v for o, v in option_pairs(options) if o == "--publish" and v]
 
 
 def host_port(port: str) -> str:
-    """Return the host side (``[ip:]port``) of a --publish value."""
+    """Return the host side (``[ip:]port``) of a --publish value.
+
+    Args:
+        port: Published port mapping to process.
+
+    Returns:
+        The normalized host side of the port mapping.
+    """
     return port_key(port).rsplit(":", 1)[0]
 
 
@@ -520,9 +706,19 @@ class VolumeMount:
 
     @property
     def is_bind(self) -> bool:
+        """Determine whether the source is a host path.
+
+        Returns:
+            True if this mount uses a host path; otherwise False.
+        """
         return is_host_path(self.source)
 
     def arg(self) -> str:
+        """Format this mount as a wslc volume argument.
+
+        Returns:
+            The source:target argument, with :ro for a read-only mount.
+        """
         return f"{self.source}:{self.target}{':ro' if self.read_only else ''}"
 
 
@@ -552,7 +748,11 @@ class ContainerSpec:
     extra_options: list[str] = field(default_factory=list)
 
     def args(self) -> list[str]:
-        """Build the ``wslc run --detach`` or ``wslc create`` arguments."""
+        """Build the ``wslc run --detach`` or ``wslc create`` arguments.
+
+        Returns:
+            Arguments for wslc run --detach or wslc create, including the image and command.
+        """
         args = ["run", "--detach"] if self.start else ["create"]
         if self.name:
             args += ["--name", self.name]
@@ -579,7 +779,11 @@ class ContainerSpec:
         return [*args, *self.command]
 
     def carried_over(self) -> list[str]:
-        """Describe the hidden settings that will be copied, for display."""
+        """Describe the hidden settings that will be copied, for display.
+
+        Returns:
+            Descriptions of the hidden settings carried over into a copy.
+        """
         details = []
         if self.entrypoint is not None:
             details.append(f"entrypoint {self.entrypoint}")
@@ -597,14 +801,30 @@ class ContainerSpec:
 
 
 def inspect_object(object_id: str, kind: str | None = None) -> dict:
-    """Return the ``wslc inspect`` data for one container, image or volume."""
+    """Return the ``wslc inspect`` data for one container, image or volume.
+
+    Args:
+        object_id: Identifier of the container, image, or volume to inspect.
+        kind: Object type to inspect, or None to let wslc determine it.
+
+    Returns:
+        The inspected object's data as a dictionary.
+    """
     args = ["inspect", *(["--type", kind] if kind else []), object_id]
     data = json.loads(run_wslc(*args))
     return data[0] if isinstance(data, list) else data
 
 
 def port_from_inspect(container_port: str, binding: dict) -> str:
-    """Turn an inspect ``Ports`` entry back into a ``--publish`` value."""
+    """Turn an inspect ``Ports`` entry back into a ``--publish`` value.
+
+    Args:
+        container_port: Container port and protocol from inspect output.
+        binding: Host binding from inspect output.
+
+    Returns:
+        The corresponding --publish value.
+    """
     port, _, proto = container_port.partition("/")
     host_ip = binding.get("HostIp", "")
     # wslc binds to 127.0.0.1 by default, so leave it implicit.
@@ -618,6 +838,13 @@ def spec_from_inspect(info: dict, image_info: dict | None) -> ContainerSpec:
 
     Settings that match the image's defaults are left out so the clone keeps
     following the image (for example, the image's PATH and default command).
+
+    Args:
+        info: Container inspect data.
+        image_info: Image inspect data, or None if unavailable.
+
+    Returns:
+        A specification containing the inspected settings needed to recreate the container.
     """
     config = info.get("Config") or {}
     image_config = (image_info or {}).get("Config") or {}
@@ -671,6 +898,13 @@ def with_extra_options(spec: ContainerSpec, options: list[str]) -> ContainerSpec
     Inspect reports the effect of every option (a ``-p`` shows up in Ports, a
     ``--memory`` in the memory limit, …). Without this, editing would show
     those settings twice and pass them to wslc twice.
+
+    Args:
+        spec: Container specification to process.
+        options: Parsed command-line options and their values.
+
+    Returns:
+        The original specification if options are empty, otherwise a copy with duplicate settings removed.
     """
     if not options:
         return spec
@@ -698,7 +932,14 @@ def with_extra_options(spec: ContainerSpec, options: list[str]) -> ContainerSpec
 
 
 def image_ref(image: dict) -> str | None:
-    """Return ``repository:tag`` for an image, or None for untagged images."""
+    """Return ``repository:tag`` for an image, or None for untagged images.
+
+    Args:
+        image: Image record returned by wslc.
+
+    Returns:
+        The repository:tag reference, or None for an untagged image.
+    """
     repo, tag = image.get("Repository", ""), image.get("Tag", "")
     if not repo or repo == "<none>" or not tag or tag == "<none>":
         return None
@@ -706,7 +947,14 @@ def image_ref(image: dict) -> str | None:
 
 
 def container_ports(container: dict) -> str:
-    """Return a readable port list, falling back to wslc's port metadata label."""
+    """Return a readable port list, falling back to wslc's port metadata label.
+
+    Args:
+        container: Container record returned by wslc.
+
+    Returns:
+        A readable port list, or an empty string when no ports can be found.
+    """
     if container.get("Ports"):
         return container["Ports"]
     labels = container.get("Labels", "")
@@ -755,6 +1003,17 @@ class ConfirmDeleteScreen(ModalScreen[str | None]):
     def __init__(
         self, kind: str, target: str, warning: str | None = None, can_force: bool = True
     ) -> None:
+        """Initialize the deletion confirmation dialog.
+
+        Args:
+            kind: Kind of item being deleted.
+            target: Display name of the item being deleted.
+            warning: Optional warning displayed in the confirmation dialog.
+            can_force: Whether to offer force deletion when a warning is present.
+
+        Returns:
+            None.
+        """
         super().__init__()
         self.kind = kind
         self.target = target
@@ -762,6 +1021,11 @@ class ConfirmDeleteScreen(ModalScreen[str | None]):
         self.can_force = can_force
 
     def compose(self) -> ComposeResult:
+        """Build the deletion confirmation dialog widgets.
+
+        Yields:
+            Widgets making up this screen or application.
+        """
         with Vertical(id="dialog"):
             yield Label(f"Delete {self.kind} [b]{self.target}[/b]?")
             if self.warning:
@@ -773,13 +1037,31 @@ class ConfirmDeleteScreen(ModalScreen[str | None]):
                     yield Button("Force delete", id="force", variant="warning")
 
     def on_mount(self) -> None:
+        """Focus the cancel button when the dialog is mounted.
+
+        Returns:
+            None.
+        """
         self.query_one("#cancel", Button).focus()
 
     @on(Button.Pressed)
     def choose(self, event: Button.Pressed) -> None:
+        """Dismiss the dialog with the selected deletion action.
+
+        Args:
+            event: Textual button event that triggered the handler.
+
+        Returns:
+            None.
+        """
         self.dismiss(None if event.button.id == "cancel" else event.button.id)
 
     def action_cancel(self) -> None:
+        """Dismiss the dialog without deleting.
+
+        Returns:
+            None.
+        """
         self.dismiss(None)
 
 
@@ -792,16 +1074,38 @@ class EntryRow(Horizontal):
     """
 
     def __init__(self, text: str, value: object) -> None:
+        """Initialize a removable form entry.
+
+        Args:
+            text: Label text shown for the entry.
+            value: Underlying value stored for the entry.
+
+        Returns:
+            None.
+        """
         super().__init__()
         self.text = text
         self.value = value
 
     def compose(self) -> ComposeResult:
+        """Build the entry label and remove button.
+
+        Yields:
+            Widgets making up this screen or application.
+        """
         yield Label(self.text)
         yield Button("Remove", classes="remove", compact=True, variant="error")
 
     @on(Button.Pressed, ".remove")
     def remove_row(self, event: Button.Pressed) -> None:
+        """Stop the button event and remove this entry from the form.
+
+        Args:
+            event: Textual button event that triggered the handler.
+
+        Returns:
+            None.
+        """
         event.stop()
         self.remove()
 
@@ -838,7 +1142,8 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
         source_name: str | None = None,
         source_running: bool = False,
     ) -> None:
-        """
+        """Initialize the container creation or copy form.
+
         Args:
             images: (label, value) pairs for the image picker.
             volumes: Names of existing volumes, used for suggestions.
@@ -849,6 +1154,9 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
             source_name: Name of the container being edited.
             source_running: Whether that container is running, to warn about
                 host port clashes.
+
+        Returns:
+            None.
         """
         super().__init__()
         self.images = images
@@ -860,6 +1168,11 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
         self.source_running = source_running
 
     def compose(self) -> ComposeResult:
+        """Build the container creation or copy form widgets.
+
+        Yields:
+            Widgets making up this screen or application.
+        """
         if self.template and self.selected_image not in {v for _, v in self.images}:
             self.images = [(self.selected_image, self.selected_image), *self.images]
         values = {value for _, value in self.images}
@@ -975,14 +1288,22 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
                 )
 
     def source_host_ports(self) -> set[str]:
-        """Host ports used by the container being edited (from Ports and extra -p options)."""
+        """Host ports used by the container being edited (from Ports and extra -p options).
+
+        Returns:
+            Host endpoints used by the source container, or an empty set.
+        """
         if not self.template:
             return set()
         ports = [*self.template.ports, *published_ports(self.template.extra_options)]
         return {host_port(p) for p in ports if ":" in port_key(p)}
 
     def default_name(self) -> str:
-        """Suggest an unused ``<name>-copy`` name when editing."""
+        """Suggest an unused ``<name>-copy`` name when editing.
+
+        Returns:
+            An unused copy name, or an empty string when not editing.
+        """
         if not self.template or not self.source_name:
             return ""
         candidate, n = f"{self.source_name}-copy", 2
@@ -991,6 +1312,14 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
         return candidate
 
     def volume_label(self, volume: VolumeMount) -> str:
+        """Format a mount for display in the volume list.
+
+        Args:
+            volume: Volume mount to format.
+
+        Returns:
+            A display label including mount kind and read-only status.
+        """
         if volume.is_bind:
             kind = "folder"
         else:
@@ -998,16 +1327,41 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
         return f"{volume.source} → {volume.target}  [dim]({kind}{', read-only' if volume.read_only else ''})[/]"
 
     def on_mount(self) -> None:
+        """Focus the image or name field when the form opens.
+
+        Returns:
+            None.
+        """
         self.query_one("#image" if self.selected_image is None else "#name").focus()
 
     def show_error(self, message: str) -> None:
+        """Display a validation message in the form.
+
+        Args:
+            message: Validation message to display.
+
+        Returns:
+            None.
+        """
         self.query_one("#error", Label).update(message)
 
     def entries(self, list_id: str) -> list:
+        """Read the values of the entry rows in a form list.
+
+        Args:
+            list_id: Selector identifying the list of form entries.
+
+        Returns:
+            The stored values of the entry rows in the selected list.
+        """
         return [row.value for row in self.query_one(list_id).query(EntryRow)]
 
     def add_port(self) -> bool:
-        """Add the typed port mapping to the list. Returns False if it's invalid."""
+        """Add the typed port mapping to the list. Returns False if it's invalid.
+
+        Returns:
+            True if the input is empty or the port was added; False if invalid.
+        """
         port_input = self.query_one("#port", Input)
         if not port_input.value.strip():
             return True
@@ -1026,7 +1380,11 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
         return True
 
     def add_volume(self) -> bool:
-        """Add the typed volume mount to the list. Returns False if it's invalid."""
+        """Add the typed volume mount to the list. Returns False if it's invalid.
+
+        Returns:
+            True if the input is empty or the volume was added; False if invalid.
+        """
         source_input = self.query_one("#vol-source", Input)
         target_input = self.query_one("#vol-target", Input)
         source, target = source_input.value.strip(), target_input.value.strip()
@@ -1063,17 +1421,32 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
     @on(Button.Pressed, "#add-port")
     @on(Input.Submitted, "#port")
     def on_add_port(self) -> None:
+        """Add the port mapping and refocus its input on success.
+
+        Returns:
+            None.
+        """
         if self.add_port():
             self.query_one("#port", Input).focus()
 
     @on(Button.Pressed, "#add-volume")
     @on(Input.Submitted, "#vol-target")
     def on_add_volume(self) -> None:
+        """Add the volume mount and refocus its source on success.
+
+        Returns:
+            None.
+        """
         if self.add_volume():
             self.query_one("#vol-source", Input).focus()
 
     @on(Input.Submitted, "#vol-source")
     def on_volume_source_submitted(self) -> None:
+        """Focus the mount target after a source is submitted.
+
+        Returns:
+            None.
+        """
         self.query_one("#vol-target", Input).focus()
 
     @on(Button.Pressed, "#create")
@@ -1081,6 +1454,11 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
     @on(Input.Submitted, "#options")
     @on(Input.Submitted, "#command")
     def on_create(self) -> None:
+        """Validate the form and dismiss it with a container specification.
+
+        Returns:
+            None.
+        """
         image = self.query_one("#image", Select).value
         if image is Select.NULL:
             self.show_error("Select an image.")
@@ -1138,6 +1516,11 @@ class CreateContainerScreen(ModalScreen[ContainerSpec | None]):
 
     @on(Button.Pressed, "#cancel")
     def action_cancel(self) -> None:
+        """Dismiss the creation form without submitting.
+
+        Returns:
+            None.
+        """
         self.dismiss(None)
 
 
@@ -1164,6 +1547,16 @@ class LogsScreen(ModalScreen[None]):
     ]
 
     def __init__(self, cid: str, name: str, follow: bool) -> None:
+        """Initialize the log viewer for a container.
+
+        Args:
+            cid: Container identifier.
+            name: Container name shown in the viewer.
+            follow: Whether to follow live container log output.
+
+        Returns:
+            None.
+        """
         super().__init__()
         self.cid = cid
         self.container_name = name
@@ -1176,20 +1569,40 @@ class LogsScreen(ModalScreen[None]):
         self.state = "loading"
 
     def compose(self) -> ComposeResult:
+        """Build the log viewer widgets.
+
+        Yields:
+            Widgets making up this screen or application.
+        """
         with Vertical(id="logs-box"):
             yield Label(id="logs-status")
             yield Log(id="logs", max_lines=LOG_MAX_LINES)
             yield Footer()
 
     def on_mount(self) -> None:
+        """Start draining and loading logs, then focus the log widget.
+
+        Returns:
+            None.
+        """
         self.set_interval(0.1, self.drain)
         self.action_reload()
         self.query_one("#logs", Log).focus()
 
     def on_unmount(self) -> None:
+        """Stop the log stream when the viewer is removed.
+
+        Returns:
+            None.
+        """
         self.stop_stream()
 
     def update_status(self) -> None:
+        """Update the log viewer status with the current settings and state.
+
+        Returns:
+            None.
+        """
         parts = [
             f"[b]Logs: {self.container_name}[/b] ({self.cid})",
             "following" if self.follow else "snapshot",
@@ -1200,6 +1613,11 @@ class LogsScreen(ModalScreen[None]):
         self.query_one("#logs-status", Label).update("  •  ".join(parts))
 
     def log_args(self) -> list[str]:
+        """Build the wslc logs arguments for the current viewer settings.
+
+        Returns:
+            The wslc logs arguments, including the container ID.
+        """
         args = ["logs"]
         if not self.show_all:
             args += ["--tail", str(LOG_TAIL_LINES)]
@@ -1210,12 +1628,21 @@ class LogsScreen(ModalScreen[None]):
         return [*args, self.cid]
 
     def stop_stream(self) -> None:
+        """Stop the current log process if it is still running.
+
+        Returns:
+            None.
+        """
         process, self.process = self.process, None
         if process and process.poll() is None:
             process.kill()
 
     def action_reload(self) -> None:
-        """Restart the log stream with the current options."""
+        """Restart the log stream with the current options.
+
+        Returns:
+            None.
+        """
         self.stop_stream()
         self.generation += 1
         self.query_one("#logs", Log).clear()
@@ -1225,7 +1652,15 @@ class LogsScreen(ModalScreen[None]):
 
     @work(thread=True, group="logs")
     def read_logs(self, generation: int, args: list[str]) -> None:
-        """Read ``wslc logs`` output line by line into the queue."""
+        """Read ``wslc logs`` output line by line into the queue.
+
+        Args:
+            generation: Log request generation used to discard stale output.
+            args: Arguments passed to the wslc command, excluding the executable.
+
+        Returns:
+            None.
+        """
         number = TRACER.start(args)
         try:
             process = subprocess.Popen(
@@ -1261,7 +1696,11 @@ class LogsScreen(ModalScreen[None]):
         self.lines.put((generation, None))
 
     def drain(self) -> None:
-        """Move queued lines into the log widget (runs on the UI thread)."""
+        """Move queued lines into the log widget (runs on the UI thread).
+
+        Returns:
+            None.
+        """
         batch: list[str] = []
         finished = False
         while True:
@@ -1286,24 +1725,54 @@ class LogsScreen(ModalScreen[None]):
             self.update_status()
 
     def action_toggle_follow(self) -> None:
+        """Toggle live following and reload the logs.
+
+        Returns:
+            None.
+        """
         self.follow = not self.follow
         self.action_reload()
 
     def action_toggle_timestamps(self) -> None:
+        """Toggle timestamps and reload the logs.
+
+        Returns:
+            None.
+        """
         self.timestamps = not self.timestamps
         self.action_reload()
 
     def action_toggle_all(self) -> None:
+        """Toggle all lines versus the configured tail and reload.
+
+        Returns:
+            None.
+        """
         self.show_all = not self.show_all
         self.action_reload()
 
     def action_scroll_end(self) -> None:
+        """Scroll the log widget to the bottom.
+
+        Returns:
+            None.
+        """
         self.query_one("#logs", Log).scroll_end(animate=False)
 
     def action_scroll_home(self) -> None:
+        """Scroll the log widget to the top.
+
+        Returns:
+            None.
+        """
         self.query_one("#logs", Log).scroll_home(animate=False)
 
     def action_close(self) -> None:
+        """Close the log viewer.
+
+        Returns:
+            None.
+        """
         self.dismiss(None)
 
 
@@ -1344,6 +1813,14 @@ class WslcTui(App):
     IMAGE_ACTIONS: ClassVar[set[str]] = {"update_image"}
 
     def __init__(self, debug: bool = False) -> None:
+        """Initialize application state and debug panel visibility.
+
+        Args:
+            debug: Whether to show the debug panel initially.
+
+        Returns:
+            None.
+        """
         super().__init__()
         self.show_all = True
         self.busy: set[str] = set()
@@ -1360,6 +1837,11 @@ class WslcTui(App):
         self.debug_entries: deque[CommandEntry] = deque(maxlen=DEBUG_MAX_ENTRIES)
 
     def compose(self) -> ComposeResult:
+        """Build the application header, tabs, debug panel, and footer.
+
+        Yields:
+            Widgets making up this screen or application.
+        """
         yield Header()
         with TabbedContent(id="tabs"):
             with TabPane("Containers", id="containers-tab"):
@@ -1372,6 +1854,11 @@ class WslcTui(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        """Initialize table columns, timers, and the first refresh.
+
+        Returns:
+            None.
+        """
         self.query_one("#containers", DataTable).add_columns(
             "ID", "Name", "Image", "State", "Status", "Ports"
         )
@@ -1389,14 +1876,35 @@ class WslcTui(App):
         self.set_interval(REFRESH_SECONDS, self.action_refresh)
 
     def show_debug_entry(self, entry: CommandEntry) -> bool:
+        """Determine whether a traced entry passes the refresh filter.
+
+        Args:
+            entry: Traced command entry to inspect or display.
+
+        Returns:
+            True if the entry should be shown under the current filter.
+        """
         return not (self.debug_hide_refresh and entry.refresh)
 
     def write_debug_entry(self, log: RichLog, entry: CommandEntry) -> None:
+        """Write an escaped, optionally styled entry to the debug panel.
+
+        Args:
+            log: Debug log widget receiving the entry.
+            entry: Traced command entry to inspect or display.
+
+        Returns:
+            None.
+        """
         text = escape(entry.text)
         log.write(f"[{entry.style}]{text}[/]" if entry.style else text)
 
     def drain_debug(self) -> None:
-        """Move traced commands into the debug panel (runs on the UI thread)."""
+        """Move traced commands into the debug panel (runs on the UI thread).
+
+        Returns:
+            None.
+        """
         TRACER.announce_slow()
         log = self.query_one("#debug", RichLog)
         added = False
@@ -1413,6 +1921,11 @@ class WslcTui(App):
             self.update_debug_title()
 
     def update_debug_title(self) -> None:
+        """Update the debug panel title and keyboard hints.
+
+        Returns:
+            None.
+        """
         log = self.query_one("#debug", RichLog)
         log.border_title = (
             f"Debug: wslc commands — {TRACER.total} run, {TRACER.failed} failed"
@@ -1421,6 +1934,11 @@ class WslcTui(App):
         log.border_subtitle = "D hide panel · H hide/show refresh commands"
 
     def action_toggle_debug(self) -> None:
+        """Toggle the debug panel and refresh key bindings.
+
+        Returns:
+            None.
+        """
         self.debug_visible = not self.debug_visible
         log = self.query_one("#debug", RichLog)
         log.display = self.debug_visible
@@ -1429,7 +1947,11 @@ class WslcTui(App):
         self.refresh_bindings()
 
     def action_toggle_debug_refresh(self) -> None:
-        """Hide or show the auto-refresh commands, re-rendering the panel."""
+        """Hide or show the auto-refresh commands, re-rendering the panel.
+
+        Returns:
+            None.
+        """
         self.debug_hide_refresh = not self.debug_hide_refresh
         log = self.query_one("#debug", RichLog)
         log.clear()
@@ -1439,10 +1961,23 @@ class WslcTui(App):
         self.update_debug_title()
 
     def active_tab(self) -> str | None:
+        """Get the identifier of the currently active tab.
+
+        Returns:
+            The active tab identifier, or None if there is no active tab.
+        """
         return self.query_one("#tabs", TabbedContent).active
 
     def check_action(self, action: str, _: tuple[object, ...]) -> bool | None:
-        """Only show and enable actions that apply to the active tab."""
+        """Only show and enable actions that apply to the active tab.
+
+        Args:
+            action: Textual action name to check.
+            _: Framework-supplied argument that is not used by this handler.
+
+        Returns:
+            True if the action is enabled for the current screen and tab; otherwise False.
+        """
         if isinstance(self.screen, ModalScreen):
             # Keep app keys from firing behind an open dialog.
             return False
@@ -1457,26 +1992,58 @@ class WslcTui(App):
     def on_tabbed_content_tab_activated(
         self, _: TabbedContent.TabActivated
     ) -> None:
+        """Refresh action bindings when the active tab changes.
+
+        Args:
+            _: Framework-supplied argument that is not used by this handler.
+
+        Returns:
+            None.
+        """
         self.refresh_bindings()
 
     def update_subtitle(self) -> None:
+        """Show the current container filter in the app subtitle.
+
+        Returns:
+            None.
+        """
         self.sub_title = "all containers" if self.show_all else "running containers"
 
     def action_refresh(self) -> None:
+        """Schedule a data refresh.
+
+        Returns:
+            None.
+        """
         self.load_data()
 
     def action_toggle_all(self) -> None:
+        """Toggle the container filter and refresh the data.
+
+        Returns:
+            None.
+        """
         self.show_all = not self.show_all
         self.update_subtitle()
         self.action_refresh()
 
     @work(thread=True, exclusive=True, group="refresh")
     def load_data(self) -> None:
-        """Fetch containers and images off the UI thread."""
+        """Fetch containers and images off the UI thread.
+
+        Returns:
+            None.
+        """
         with TRACER.label("refresh"):
             self.fetch_and_populate()
 
     def fetch_and_populate(self) -> None:
+        """Fetch container, image, and volume data and populate the UI.
+
+        Returns:
+            None.
+        """
         try:
             # Always list every container: stopped ones still hold volumes.
             all_containers = list_containers(True)
@@ -1511,6 +2078,15 @@ class WslcTui(App):
         """Fill the tables, keeping the cursor on the same row when possible.
 
         ``volumes`` is None when listing them failed; that table is left as is.
+
+        Args:
+            containers: Container records returned by wslc.
+            images: Image records returned by wslc.
+            volumes: Volume records returned by wslc, or None if listing failed.
+            all_containers: All container records, including stopped containers.
+
+        Returns:
+            None.
         """
         if volumes is not None:
             self.populate_volumes(volumes, all_containers)
@@ -1565,6 +2141,15 @@ class WslcTui(App):
             image_table.move_cursor(row=min(image_row, len(images) - 1))
 
     def populate_volumes(self, volumes: list[dict], containers: list[dict]) -> None:
+        """Update the volume table and restore its selected row when possible.
+
+        Args:
+            volumes: Volume records to display.
+            containers: Container records returned by wslc.
+
+        Returns:
+            None.
+        """
         table = self.query_one("#volume-table", DataTable)
         row = table.cursor_row
         selected = self.selected_volume()
@@ -1590,6 +2175,11 @@ class WslcTui(App):
             table.move_cursor(row=min(row, len(names) - 1))
 
     def selected_volume(self) -> str | None:
+        """Get the selected volume row key.
+
+        Returns:
+            The selected volume name, or None if the table is empty.
+        """
         table = self.query_one("#volume-table", DataTable)
         if table.row_count == 0:
             return None
@@ -1597,6 +2187,11 @@ class WslcTui(App):
         return row_key.value
 
     def selected_container_id(self) -> str | None:
+        """Get the selected container row key.
+
+        Returns:
+            The selected container ID, or None if the table is empty.
+        """
         table = self.query_one("#containers", DataTable)
         if table.row_count == 0:
             return None
@@ -1604,7 +2199,11 @@ class WslcTui(App):
         return row_key.value
 
     def selected_container(self) -> tuple[str, str] | None:
-        """Return (id, name) of the highlighted container, notifying if unavailable."""
+        """Return (id, name) of the highlighted container, notifying if unavailable.
+
+        Returns:
+            The selected container's (ID, name), or None if unavailable.
+        """
         if self.query_one("#tabs", TabbedContent).active != "containers-tab":
             self.notify("Switch to the Containers tab to select a container.", severity="warning")
             return None
@@ -1619,7 +2218,11 @@ class WslcTui(App):
         return cid, name
 
     def action_logs(self) -> None:
-        """Open the log viewer for the highlighted container."""
+        """Open the log viewer for the highlighted container.
+
+        Returns:
+            None.
+        """
         cid = self.selected_container_id()
         if cid is None:
             self.notify("No container selected.", severity="warning")
@@ -1629,16 +2232,35 @@ class WslcTui(App):
         self.push_screen(LogsScreen(cid, name, follow))
 
     def action_start(self) -> None:
+        """Start the selected container if it is available.
+
+        Returns:
+            None.
+        """
         if selected := self.selected_container():
             self.container_action("start", *selected)
 
     def action_stop(self) -> None:
+        """Stop the selected container if it is available.
+
+        Returns:
+            None.
+        """
         if selected := self.selected_container():
             self.container_action("stop", *selected)
 
     @work(thread=True)
     def container_action(self, verb: str, cid: str, name: str) -> None:
-        """Run ``wslc start|stop`` for a container, then refresh."""
+        """Run ``wslc start|stop`` for a container, then refresh.
+
+        Args:
+            verb: Container action to run: start or stop.
+            cid: Container identifier.
+            name: Container name used in notifications.
+
+        Returns:
+            None.
+        """
         self.busy.add(cid)
         progress = {"start": "Starting", "stop": "Stopping"}[verb]
         self.call_from_thread(self.notify, f"{progress} {name}…")
@@ -1656,7 +2278,11 @@ class WslcTui(App):
             self.call_from_thread(self.action_refresh)
 
     def image_options(self) -> list[tuple[str, str]]:
-        """Return (label, value) pairs of local images for the image picker."""
+        """Return (label, value) pairs of local images for the image picker.
+
+        Returns:
+            Unique (display label, image reference or ID) pairs.
+        """
         options = []
         for image in self.images:
             value = image_ref(image) or image.get("ID", "")
@@ -1665,15 +2291,32 @@ class WslcTui(App):
         return options
 
     def container_names(self) -> set[str]:
+        """Get the names in the current container table.
+
+        Returns:
+            The container names currently shown in the table.
+        """
         table = self.query_one("#containers", DataTable)
         return {table.get_row(row)[1] for row in table.rows}
 
     def on_create_submitted(self, spec: ContainerSpec | None) -> None:
+        """Start container creation when a form specification is submitted.
+
+        Args:
+            spec: Container specification to process.
+
+        Returns:
+            None.
+        """
         if spec:
             self.create_container(spec)
 
     def action_new_container(self) -> None:
-        """Open the New container form, preselecting the highlighted image."""
+        """Open the New container form, preselecting the highlighted image.
+
+        Returns:
+            None.
+        """
         options = self.image_options()
         if not options:
             self.notify("No images available. Pull an image first.", severity="warning")
@@ -1687,13 +2330,25 @@ class WslcTui(App):
         )
 
     def action_edit_container(self) -> None:
-        """Open the form pre-filled from the highlighted container, to save a modified copy."""
+        """Open the form pre-filled from the highlighted container, to save a modified copy.
+
+        Returns:
+            None.
+        """
         if selected := self.selected_container():
             self.load_edit_form(*selected)
 
     @work(thread=True, exclusive=True, group="edit")
     def load_edit_form(self, cid: str, name: str) -> None:
-        """Inspect the container (and its image) off the UI thread, then open the form."""
+        """Inspect the container (and its image) off the UI thread, then open the form.
+
+        Args:
+            cid: Container identifier.
+            name: Source container name shown in the form or error.
+
+        Returns:
+            None.
+        """
         try:
             info = inspect_object(cid, "container")
             image_id = info.get("Image", "")
@@ -1721,6 +2376,16 @@ class WslcTui(App):
         self.call_from_thread(self.open_edit_form, spec, name, running)
 
     def open_edit_form(self, spec: ContainerSpec, name: str, running: bool) -> None:
+        """Open the copy form with an inspected container specification.
+
+        Args:
+            spec: Container specification to process.
+            name: Source container name shown in the form.
+            running: Whether the source container is running.
+
+        Returns:
+            None.
+        """
         self.push_screen(
             CreateContainerScreen(
                 self.image_options(),
@@ -1735,7 +2400,14 @@ class WslcTui(App):
 
     @work(thread=True)
     def create_container(self, spec: ContainerSpec) -> None:
-        """Create any new volumes, then create (and optionally start) the container."""
+        """Create any new volumes, then create (and optionally start) the container.
+
+        Args:
+            spec: Container specification to process.
+
+        Returns:
+            None.
+        """
         label = spec.name or spec.image
         self.call_from_thread(self.notify, f"Creating container from {spec.image}…")
         created_volumes = []
@@ -1764,7 +2436,11 @@ class WslcTui(App):
             self.call_from_thread(self.action_refresh)
 
     def action_delete(self) -> None:
-        """Delete the highlighted container, image or volume, depending on the active tab."""
+        """Delete the highlighted container, image or volume, depending on the active tab.
+
+        Returns:
+            None.
+        """
         if self.active_tab() == "images-tab":
             self.action_delete_image()
         elif self.active_tab() == "volumes-tab":
@@ -1773,7 +2449,11 @@ class WslcTui(App):
             self.action_delete_container()
 
     def action_delete_volume(self) -> None:
-        """Confirm, then delete the highlighted volume."""
+        """Confirm, then delete the highlighted volume.
+
+        Returns:
+            None.
+        """
         name = self.selected_volume()
         if name is None:
             self.notify("No volume selected.", severity="warning")
@@ -1790,6 +2470,14 @@ class WslcTui(App):
             )
 
         def on_choice(choice: str | None) -> None:
+            """Remove the selected volume if deletion was confirmed.
+
+            Args:
+                choice: Selected deletion action, or None when cancelled.
+
+            Returns:
+                None.
+            """
             if choice:
                 self.remove_volume(name)
 
@@ -1797,7 +2485,14 @@ class WslcTui(App):
 
     @work(thread=True)
     def remove_volume(self, name: str) -> None:
-        """Run ``wslc volume remove``, then refresh."""
+        """Run ``wslc volume remove``, then refresh.
+
+        Args:
+            name: Name of the volume to remove.
+
+        Returns:
+            None.
+        """
         self.deleting_volumes.add(name)
         self.call_from_thread(self.notify, f"Deleting volume {name}…")
         self.call_from_thread(self.action_refresh)
@@ -1814,7 +2509,11 @@ class WslcTui(App):
             self.call_from_thread(self.action_refresh)
 
     def action_delete_container(self) -> None:
-        """Confirm, then delete the highlighted container."""
+        """Confirm, then delete the highlighted container.
+
+        Returns:
+            None.
+        """
         selected = self.selected_container()
         if not selected:
             return
@@ -1827,6 +2526,14 @@ class WslcTui(App):
             )
 
         def on_choice(choice: str | None) -> None:
+            """Remove the selected container if deletion was confirmed.
+
+            Args:
+                choice: Selected deletion action, or None when cancelled.
+
+            Returns:
+                None.
+            """
             if choice:
                 self.remove_container(cid, name, force=choice == "force")
 
@@ -1834,7 +2541,16 @@ class WslcTui(App):
 
     @work(thread=True)
     def remove_container(self, cid: str, name: str, force: bool) -> None:
-        """Run ``wslc remove`` for a container, then refresh."""
+        """Run ``wslc remove`` for a container, then refresh.
+
+        Args:
+            cid: Container identifier.
+            name: Container name used in notifications.
+            force: Whether to request forced deletion.
+
+        Returns:
+            None.
+        """
         self.busy.add(cid)
         self.call_from_thread(self.notify, f"Deleting {name}…")
         self.call_from_thread(self.action_refresh)
@@ -1851,6 +2567,11 @@ class WslcTui(App):
             self.call_from_thread(self.action_refresh)
 
     def selected_image_key(self) -> str | None:
+        """Get the selected image row key.
+
+        Returns:
+            The selected image row key, or None if the table is empty.
+        """
         table = self.query_one("#images", DataTable)
         if table.row_count == 0:
             return None
@@ -1858,7 +2579,11 @@ class WslcTui(App):
         return row_key.value
 
     def action_update_image(self) -> None:
-        """Pull the latest version of the highlighted image."""
+        """Pull the latest version of the highlighted image.
+
+        Returns:
+            None.
+        """
         key = self.selected_image_key()
         if key is None:
             self.notify("No image selected.", severity="warning")
@@ -1873,7 +2598,11 @@ class WslcTui(App):
         self.pull_image(key, old_id)
 
     def action_delete_image(self) -> None:
-        """Confirm, then delete the highlighted image."""
+        """Confirm, then delete the highlighted image.
+
+        Returns:
+            None.
+        """
         key = self.selected_image_key()
         if key is None:
             self.notify("No image selected.", severity="warning")
@@ -1893,6 +2622,14 @@ class WslcTui(App):
             warning = f"{in_use} container(s) use this image. Remove them first, or force delete."
 
         def on_choice(choice: str | None) -> None:
+            """Remove the selected image if deletion was confirmed.
+
+            Args:
+                choice: Selected deletion action, or None when cancelled.
+
+            Returns:
+                None.
+            """
             if choice:
                 self.remove_image(target, force=choice == "force")
 
@@ -1900,7 +2637,15 @@ class WslcTui(App):
 
     @work(thread=True)
     def remove_image(self, target: str, force: bool) -> None:
-        """Run ``wslc rmi`` for an image, then refresh."""
+        """Run ``wslc rmi`` for an image, then refresh.
+
+        Args:
+            target: Image reference or ID to remove.
+            force: Whether to request forced deletion.
+
+        Returns:
+            None.
+        """
         self.deleting.add(target)
         self.call_from_thread(self.notify, f"Deleting {target}…")
         self.call_from_thread(self.action_refresh)
@@ -1918,7 +2663,15 @@ class WslcTui(App):
 
     @work(thread=True)
     def pull_image(self, ref: str, old_id: str) -> None:
-        """Run ``wslc pull`` for an image and report whether it changed."""
+        """Run ``wslc pull`` for an image and report whether it changed.
+
+        Args:
+            ref: Tagged image reference to pull.
+            old_id: Image ID before pulling, used to detect a change.
+
+        Returns:
+            None.
+        """
         self.updating.add(ref)
         self.call_from_thread(self.notify, f"Updating {ref}…")
         self.call_from_thread(self.action_refresh)
@@ -1943,6 +2696,11 @@ class WslcTui(App):
 
 
 def main() -> None:
+    """Parse command-line options and run the terminal application.
+
+    Returns:
+        None.
+    """
     parser = argparse.ArgumentParser(description="Terminal UI for the wslc container CLI.")
     parser.add_argument(
         "--debug", action="store_true", help="show the panel listing every wslc command (toggle with D)"

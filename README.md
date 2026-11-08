@@ -12,6 +12,8 @@ A terminal UI for the WSL container CLI (`wslc`), built with [Textual](https://t
 
 ## Run
 
+Requires Python 3.10 or later.
+
 From the `wslc_tui` repository directory:
 
 ```powershell

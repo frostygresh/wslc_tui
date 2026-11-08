@@ -1,4 +1,4 @@
-# wslc TUI
+# wslc_tui
 
 A terminal UI for the WSL container CLI (`wslc`), built with [Textual](https://textual.textualize.io/).
 
@@ -12,9 +12,11 @@ A terminal UI for the WSL container CLI (`wslc`), built with [Textual](https://t
 
 ## Run
 
+From the `wslc_tui` repository directory:
+
 ```powershell
-pip install -r wslc\requirements.txt
-python wslc\wslc_tui.py
+pip install -r requirements.txt
+python wslc_tui.py
 ```
 
 ## Keys
@@ -101,7 +103,7 @@ The debug panel lists every `wslc` command the TUI runs, with its result:
 - Press `D` to show or hide it, or start with it open:
 
   ```powershell
-  python wslc\wslc_tui.py --debug
+  python wslc_tui.py --debug
   ```
 
 - Commands from the 5-second auto refresh are dimmed and tagged `[refresh]`; press `H` to hide or show them.
@@ -111,12 +113,12 @@ The debug panel lists every `wslc` command the TUI runs, with its result:
 - To keep a record, add `--debug-log FILE` to append every command and result to a file (works with or without `--debug`):
 
   ```powershell
-  python wslc\wslc_tui.py --debug --debug-log wslc-debug.log
+  python wslc_tui.py --debug --debug-log wslc-debug.log
   ```
 
 ## License
 
-wslc TUI — a terminal UI for the WSL container CLI  
+wslc_tui — a terminal UI for the WSL container CLI  
 Copyright (C) 2026 Brian Frost
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.

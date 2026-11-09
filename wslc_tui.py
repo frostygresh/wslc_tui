@@ -94,6 +94,7 @@ class WslcError(Exception):
     """Raised when a wslc command fails."""
 
 
+# The tracer records CLI work from background threads for the UI's debug panel.
 def format_command(args: list[str] | tuple[str, ...]) -> str:
     """Render a wslc command line for display, masking environment variable values.
 
@@ -262,6 +263,8 @@ class CommandTracer:
 TRACER = CommandTracer()
 
 
+# Keep process execution in one place so timeouts, failures, and debug entries
+# are handled consistently for every wslc operation.
 def run_wslc(*args: str, timeout: float | None = 120) -> str:
     """Run a wslc command and return its stdout.
 
@@ -300,6 +303,7 @@ def run_wslc(*args: str, timeout: float | None = 120) -> str:
     return result.stdout
 
 
+# Convert wslc's JSON output into records used by the app's tables and forms.
 def parse_json_lines(output: str) -> list[dict]:
     """Parse wslc ``--format json`` output, which emits one object per line.
 
@@ -399,6 +403,7 @@ def volume_users(containers: list[dict], volume_names: list[str]) -> dict[str, l
     return users
 
 
+# Validate user-provided port mappings before building a container command.
 def normalize_port(spec: str) -> str:
     """Validate a ``[ip:]host:container[/tcp|udp]`` port mapping.
 
@@ -423,7 +428,8 @@ def normalize_port(spec: str) -> str:
     return spec.lower()
 
 
-# Options `wslc run` / `wslc create` accept, split by whether they take a value.
+# The option tables let the form validate extra run/create arguments instead
+# of accepting arbitrary tokens that could be mistaken for an image name.
 VALUE_OPTIONS = {
     "--cidfile", "--cpus", "--dns", "--dns-option", "--dns-search", "--domainname",
     "--entrypoint", "--env", "--env-file", "--gpus", "--health-cmd", "--health-interval",
@@ -448,6 +454,7 @@ RESERVED_OPTIONS = {
 RESERVED_SHORT = {"d": "--detach", "?": "--help"}
 
 
+# These helpers parse, store, restore, and reconcile options used by form edits.
 def split_options(text: str, field_name: str = "Extra options") -> list[str]:
     """Split a command line like a shell, but keep backslashes for Windows paths.
 
@@ -723,6 +730,7 @@ class VolumeMount:
         return f"{self.source}:{self.target}{':ro' if self.read_only else ''}"
 
 
+# A single container specification is shared by create and clone/edit flows.
 @dataclass
 class ContainerSpec:
     """Everything needed to create a container from the New container form.
@@ -801,6 +809,7 @@ class ContainerSpec:
         return details
 
 
+# Convert inspect data to and from the editable form's normalized model.
 def inspect_object(object_id: str, kind: str | None = None) -> dict:
     """Return the ``wslc inspect`` data for one container, image or volume.
 
@@ -932,6 +941,7 @@ def with_extra_options(spec: ContainerSpec, options: list[str]) -> ContainerSpec
     )
 
 
+# These helpers format raw wslc records for display in the data tables.
 def image_ref(image: dict) -> str | None:
     """Return ``repository:tag`` for an image, or None for untagged images.
 
@@ -982,6 +992,7 @@ STATE_STYLES = {
 }
 
 
+# Modal screens and form widgets isolate focused UI interactions from the main tables.
 class AboutScreen(ModalScreen[None]):
     """Show application and license information."""
 
@@ -2072,6 +2083,7 @@ class WslcTui(App):
         """Show application information."""
         self.push_screen(AboutScreen())
 
+    # Refresh work runs on a worker; table updates are marshalled back to the UI thread.
     def action_refresh(self) -> None:
         """Schedule a data refresh.
 
@@ -2130,6 +2142,7 @@ class WslcTui(App):
                 )
         self.call_from_thread(self.populate, containers, images, volumes, all_containers)
 
+    # Rebuild table rows from the latest records while preserving valid selections.
     def populate(
         self,
         containers: list[dict],
@@ -2236,6 +2249,7 @@ class WslcTui(App):
         elif names:
             table.move_cursor(row=min(row, len(names) - 1))
 
+    # Selection helpers keep actions tied to stable row keys instead of display text.
     def selected_volume(self) -> str | None:
         """Get the selected volume row key.
 
@@ -2339,6 +2353,7 @@ class WslcTui(App):
             self.busy.discard(cid)
             self.call_from_thread(self.action_refresh)
 
+    # Creation and cloning both use the same validated form and ContainerSpec model.
     def image_options(self) -> list[tuple[str, str]]:
         """Return (label, value) pairs of local images for the image picker.
 
@@ -2497,6 +2512,7 @@ class WslcTui(App):
         finally:
             self.call_from_thread(self.action_refresh)
 
+    # Deletion is confirmed in the UI, then performed asynchronously by object type.
     def action_delete(self) -> None:
         """Delete the highlighted container, image or volume, depending on the active tab.
 
@@ -2628,6 +2644,7 @@ class WslcTui(App):
             self.busy.discard(cid)
             self.call_from_thread(self.action_refresh)
 
+    # Image actions use references for tagged images and IDs for untagged images.
     def selected_image_key(self) -> str | None:
         """Get the selected image row key.
 

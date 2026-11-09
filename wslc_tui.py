@@ -56,6 +56,7 @@ from rich.markup import escape
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.suggester import SuggestFromList
@@ -981,6 +982,61 @@ STATE_STYLES = {
 }
 
 
+class AboutScreen(ModalScreen[None]):
+    """Show application and license information."""
+
+    CSS = """
+    AboutScreen { align: center middle; }
+    #dialog {
+        width: 64; height: auto; padding: 1 2;
+        border: thick $primary; background: $surface;
+    }
+    #dialog Label { width: 100%; margin-bottom: 1; }
+    #buttons { width: 100%; height: auto; align-horizontal: center; }
+    """
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "close", "Close")]
+
+    def compose(self) -> ComposeResult:
+        """Build the About dialog."""
+        with Vertical(id="dialog"):
+            yield Label(f"[b]{APP_NAME}[/b]")
+            yield Label("A terminal UI for managing WSL containers with the wslc CLI.")
+            yield Label("Licensed under the GNU GPL v3 or later.")
+            with Horizontal(id="buttons"):
+                yield Button("Close", id="close")
+
+    @on(Button.Pressed, "#close")
+    def close(self) -> None:
+        """Dismiss the About dialog."""
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        """Dismiss the About dialog."""
+        self.dismiss(None)
+
+
+class AboutCommandProvider(Provider):
+    """Expose the About dialog in the header command palette."""
+
+    async def search(self, query: str) -> Hits:
+        matcher = self.matcher(query)
+        score = matcher.match("About")
+        if score > 0:
+            yield Hit(
+                score,
+                matcher.highlight("About"),
+                lambda: self.app.run_action("about"),
+                help="Show application information",
+            )
+
+    async def discover(self) -> Hits:
+        yield DiscoveryHit(
+            "About",
+            lambda: self.app.run_action("about"),
+            help="Show application information",
+        )
+
+
 class ConfirmDeleteScreen(ModalScreen[str | None]):
     """Ask the user to confirm deleting a container, image or volume.
 
@@ -1779,6 +1835,7 @@ class LogsScreen(ModalScreen[None]):
 class WslcTui(App):
     """Textual app for browsing and controlling wslc containers."""
 
+    COMMANDS = App.COMMANDS | {AboutCommandProvider}
     TITLE = APP_NAME
     CSS = """
     DataTable { height: 1fr; }
@@ -1801,6 +1858,7 @@ class WslcTui(App):
         Binding("l", "logs", "Logs"),
         Binding("D", "toggle_debug", "Debug"),
         Binding("H", "toggle_debug_refresh", "Hide/show refresh"),
+        Binding("ctrl+shift+a", "about", "About"),
         Binding("q", "quit", "Quit"),
     ]
     CONTAINER_ACTIONS: ClassVar[set[str]] = {
@@ -2009,6 +2067,10 @@ class WslcTui(App):
             None.
         """
         self.sub_title = "all containers" if self.show_all else "running containers"
+
+    def action_about(self) -> None:
+        """Show application information."""
+        self.push_screen(AboutScreen())
 
     def action_refresh(self) -> None:
         """Schedule a data refresh.

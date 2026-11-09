@@ -16,7 +16,7 @@ A terminal UI for the WSL container CLI (`wslc`), built with [Textual](https://t
 
 ## Run
 
-Requires Python 3.10 or later.
+Requires Python 3.10 or later and WSL 3.x.
 
 From the `wslc_tui` repository directory:
 
@@ -38,6 +38,7 @@ python wslc_tui.py
 | `l` | View logs of selected container |
 | `D` | Show/hide the debug panel (see [Debug mode](#debug-mode)) |
 | `H` | Hide/show auto-refresh commands in the debug panel |
+| `Ctrl+Shift+A` | Show About (also available from the header command palette) |
 | `u` | Update selected image (pulls the latest `repository:tag`) |
 | `d` | Delete selected container, image or volume, depending on the tab (asks for confirmation; offers force delete for running containers or images in use) |
 | `q` | Quit |

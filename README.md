@@ -10,6 +10,10 @@ A terminal UI for the WSL container CLI (`wslc`), built with [Textual](https://t
 - **New container** form: create a container from an existing image, map ports, attach volumes and add any other `wslc run` options
 - Refreshes automatically every 5 seconds
 
+![Containers Screen](docs/screenshots/image.png)
+![Images Screen](docs/screenshots/image-1.png)
+![Volumes Screen](docs/screenshots/image-2.png)
+
 ## Run
 
 Requires Python 3.10 or later.
